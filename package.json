@@ -1,0 +1,19 @@
+{
+  "name": "build-ledger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build Ledger — house construction cost tracker with real-time multi-device sync (Supabase).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
