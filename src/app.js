@@ -7,15 +7,17 @@ import { normalizeError, AppError } from './data/errors.js';
 import { isConfigured } from './config.js';
 import { view } from './ui/render.js';
 import { html } from './ui/dom.js';
+import { viewerSheet } from './ui/components.js';
 import { t, setLang, dirOf, defaultStageNames } from './i18n/index.js';
 import { today } from './domain/dates.js';
 import { parseNum, normalizePhone, normalizeUsername, isValidUsername, isValidPhone, identifierOf } from './domain/format.js';
 import { PRESETS } from './domain/permissions.js';
+import { mimeOf, cleanName, checkFiles } from './domain/files.js';
 import { switchSheet, projectForm } from './ui/views/projects.js';
 import { stageForm, itemForm } from './ui/views/stage.js';
 import { paymentForm, itemOptions } from './ui/views/payments.js';
 import { contractorForm } from './ui/views/contractors.js';
-import { updateForm, issueForm } from './ui/views/site.js';
+import { updateForm, issueForm, attsOf } from './ui/views/site.js';
 import { inviteForm, memberForm, rolesSheet } from './ui/views/team.js';
 import { profileForm } from './ui/views/settings.js';
 import { summaryText } from './ui/views/reports.js';
@@ -26,6 +28,7 @@ const LAST = 'bl.project';
 let unwatchProject = null;
 let unwatchNotes = null;
 let pendingConfirm = null;
+let viewerState = null;
 
 // ---------------------------------------------------------------- واجهة عامة
 export function toast(msg, ms = 3200) {
@@ -48,6 +51,7 @@ function closeSheet() {
   $('#sheet-body').innerHTML = '';
   document.body.classList.remove('noscroll');
   pendingConfirm = null;
+  viewerState = null;
 }
 function askConfirm(note, fn) {
   pendingConfirm = fn;
@@ -149,14 +153,15 @@ function teardown() {
   closeSheet();
   setState({
     session: null, user: null, profile: null, projects: [], invites: [], notes: [], projectId: null,
-    data: { members: [], stages: [], items: [], contractors: [], payments: [], updates: [], issues: [], messages: [] },
+    data: { members: [], stages: [], items: [], contractors: [], payments: [], updates: [], issues: [], messages: [], attachments: [] },
     route: { tab: 'home', sub: null, id: null, auth: 'in', period: 'all', site: 'updates', stack: [] },
   });
 }
 
-// ---------------------------------------------------------------- مساعدات النماذج
+// ---------------------------------------------------------------- مساعدات النماذج والمرفقات
 const text = (fd, k) => String(fd.get(k) ?? '').trim();
 const fileOf = (fd) => { const f = fd.get('file'); return f && f.size ? f : null; };
+const filesOf = (fd) => fd.getAll('files').filter((f) => f && f.size);
 const need = (ok) => { if (!ok) throw new AppError('fill'); };
 const orNull = (v) => (v ? v : null);
 const pid = () => state.projectId;
@@ -164,6 +169,40 @@ const ctx = () => makeContext();
 const push = (patch) => setState({ route: { ...state.route, stack: [...(state.route.stack ?? []), { tab: state.route.tab, sub: state.route.sub, id: state.route.id, site: state.route.site }], ...patch } });
 const pop = () => { const st = [...(state.route.stack ?? [])]; const prev = st.pop() ?? { sub: null, id: null }; setState({ route: { ...state.route, ...prev, stack: st } }); window.scrollTo(0, 0); };
 const done = async () => { closeSheet(); await refreshProject(); };
+
+async function uploadAttachments(bucket, ownerKind, ownerId, files, existing = 0) {
+  if (!files.length) return;
+  checkFiles(bucket, files, existing);
+  const rows = [];
+  for (const f of files) {
+    const path = await uploadFile(bucket, pid(), f);
+    rows.push({
+      owner_kind: ownerKind,
+      owner_id: ownerId,
+      bucket,
+      path,
+      name: cleanName(f.name),
+      mime: mimeOf(f),
+      size: f.size,
+    });
+  }
+  await repo.addAttachments(pid(), rows);
+}
+
+async function purgeOwnerAttachments(ownerKind, ownerId) {
+  const list = attsOf(ctx(), ownerKind, ownerId);
+  if (!list.length) return;
+  await repo.removeAttachments(list.map((a) => a.id));
+  await Promise.all(list.map((a) => removeFile(a.bucket, a.path).catch(() => {})));
+}
+
+async function showViewer(list, index) {
+  const i = ((index % list.length) + list.length) % list.length;
+  const a = list[i];
+  const url = await signedUrl(a.bucket, a.path);
+  openSheet(viewerSheet(a, url, i, list.length));
+  viewerState = { list, index: i };
+}
 
 // ---------------------------------------------------------------- الإجراءات (click)
 const A = {
@@ -210,11 +249,23 @@ const A = {
       ${pdf ? html`<iframe class="pdf" src="${url}" title="PDF"></iframe>` : html`<img class="photo" src="${url}" alt="">`}
       <a class="btn o" href="${url}" target="_blank" rel="noopener noreferrer">↗</a><button class="btn" data-act="sheet-close">${t('close')}</button>`);
   },
+  'att-open': async (el) => {
+    const c = ctx();
+    const target = (c.d.attachments ?? []).find((a) => a.id === el.dataset.id);
+    if (!target) return;
+    const list = attsOf(c, target.owner_kind, target.owner_id);
+    const idx = Math.max(0, list.findIndex((a) => a.id === target.id));
+    await showViewer(list, idx);
+  },
+  'att-nav': async (el) => {
+    if (!viewerState) return;
+    await showViewer(viewerState.list, viewerState.index + Number(el.dataset.dir || 0));
+  },
   'rep-period': (el) => setState({ route: { ...state.route, period: el.dataset.id } }),
   'rep-copy': async () => { await navigator.clipboard.writeText(summaryText(ctx())); toast(t('copied')); },
   'site-tab': (el) => setState({ route: { ...state.route, site: el.dataset.id } }),
-  'upd-new': () => openSheet(updateForm(null)),
-  'upd-edit': (el) => openSheet(updateForm(ctx().d.updates.find((u) => u.id === el.dataset.id))),
+  'upd-new': () => openSheet(updateForm(ctx(), null)),
+  'upd-edit': (el) => { const c = ctx(); openSheet(updateForm(c, c.d.updates.find((u) => u.id === el.dataset.id))); },
   'issue-new': () => openSheet(issueForm(ctx())),
   'member-new': () => openSheet(inviteForm(ctx())),
   'member-edit': (el) => { const c = ctx(); openSheet(memberForm(c, c.d.members.find((m) => m.user_id === el.dataset.id))); },
@@ -247,10 +298,19 @@ const DELETE = {
   },
   update: async (id) => {
     const u = ctx().d.updates.find((x) => x.id === id);
-    await repo.removeRow('project_updates', id); await removeFile('updates', u?.photo_path).catch(() => {});
+    await purgeOwnerAttachments('update', id);
+    await repo.removeRow('project_updates', id);
+    if (u?.photo_path) await removeFile('updates', u.photo_path).catch(() => {});
     await refreshProject();
   },
-  issue: async (id) => { await repo.removeRow('issues', id); pop(); await refreshProject(); },
+  issue: async (id) => {
+    const c = ctx();
+    const msgs = c.d.messages.filter((m) => m.issue_id === id);
+    for (const m of msgs) await purgeOwnerAttachments('message', m.id);
+    await purgeOwnerAttachments('issue', id);
+    await repo.removeRow('issues', id);
+    pop(); await refreshProject();
+  },
   member: async (id) => { await repo.removeMember(pid(), id); await refreshProject(); },
   leave: async (id) => { await repo.leaveProject(id); await refreshMeta(); },
   project: async (id) => { await repo.deleteProject(id); await refreshMeta(); },
@@ -322,22 +382,50 @@ const F = {
     await done();
   },
   update: async (f, fd) => {
-    const id = f.dataset.id; const old = id ? ctx().d.updates.find((u) => u.id === id) : null; need(text(fd, 'title'));
-    let photo = old?.photo_path ?? null; const file = fileOf(fd);
-    if (file) { const np = await uploadFile('updates', pid(), file); if (photo) await removeFile('updates', photo).catch(() => {}); photo = np; }
-    await repo.saveUpdate(pid(), id || null, { title: text(fd, 'title'), body: String(fd.get('body') ?? ''), posted_on: text(fd, 'date') || today(), photo_path: photo });
+    const id = f.dataset.id;
+    need(text(fd, 'title'));
+    const files = filesOf(fd);
+    const removeIds = fd.getAll('remove').map(String);
+    const current = id ? attsOf(ctx(), 'update', id) : [];
+    const remaining = current.filter((a) => !removeIds.includes(String(a.id)));
+    if (files.length) checkFiles('updates', files, remaining.length);
+
+    const fields = { title: text(fd, 'title'), body: String(fd.get('body') ?? ''), posted_on: text(fd, 'date') || today() };
+    let targetId = id;
+    if (id) {
+      await repo.saveUpdate(pid(), id, fields);
+      if (removeIds.length) {
+        const toDel = current.filter((a) => removeIds.includes(String(a.id)));
+        await repo.removeAttachments(removeIds);
+        await Promise.all(toDel.map((a) => removeFile(a.bucket, a.path).catch(() => {})));
+      }
+    } else {
+      const created = await repo.insertReturning('project_updates', pid(), fields);
+      targetId = created.id;
+    }
+    await uploadAttachments('updates', 'update', targetId, files, remaining.length);
     await done();
   },
   issue: async (f, fd) => {
-    need(text(fd, 'title')); const file = fileOf(fd);
-    const photo = file ? await uploadFile('visits', pid(), file) : null;
-    await repo.saveIssue(pid(), null, { title: text(fd, 'title'), description: String(fd.get('description') ?? ''), stage_id: orNull(fd.get('stage_id')), photo_path: photo });
+    need(text(fd, 'title'));
+    const files = filesOf(fd);
+    if (files.length) checkFiles('visits', files, 0);
+    const created = await repo.insertReturning('issues', pid(), {
+      title: text(fd, 'title'),
+      description: String(fd.get('description') ?? ''),
+      stage_id: orNull(fd.get('stage_id')),
+    });
+    await uploadAttachments('visits', 'issue', created.id, files, 0);
     await done();
   },
   message: async (f, fd) => {
-    const body = text(fd, 'body'); const file = fileOf(fd); need(body || file);
-    const photo = file ? await uploadFile('visits', pid(), file) : null;
-    await repo.sendMessage(pid(), f.dataset.id, body, photo); await refreshProject();
+    const body = text(fd, 'body');
+    const files = filesOf(fd);
+    need(body || files.length);
+    if (files.length) checkFiles('visits', files, 0);
+    const created = await repo.sendMessage(pid(), f.dataset.id, body);
+    await uploadAttachments('visits', 'message', created.id, files, 0);
+    await refreshProject();
   },
   invite: async (f, fd) => {
     const identifier = identifierOf(fd.get('identifier')); need(identifier);
