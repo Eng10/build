@@ -15,7 +15,7 @@ export const state = {
   invites: [],
   notes: [],
   projectId: null,
-  data: { members: [], stages: [], items: [], contractors: [], payments: [], updates: [], issues: [], messages: [] },
+  data: { members: [], stages: [], items: [], contractors: [], payments: [], updates: [], issues: [], messages: [], attachments: [] },
   route: { tab: 'home', sub: null, id: null, auth: 'in', period: 'all', site: 'updates' },
 };
 

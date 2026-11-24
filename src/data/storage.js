@@ -1,20 +1,16 @@
 import { db } from './client.js';
 import { config } from '../config.js';
-import { AppError, normalizeError } from './errors.js';
+import { normalizeError } from './errors.js';
+import { EXT, mimeOf, checkFiles } from '../domain/files.js';
 
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
 const cache = new Map();
-
-export function validateFile(bucket, file) {
-  if (file.size > config.maxFileBytes) throw new AppError('file_big');
-  if (!config.mime[bucket]?.includes(file.type)) throw new AppError('file_type');
-}
 
 // المسار: <project_id>/<uuid>.<ext> — سياسات التخزين تعتمد على أول جزء من المسار.
 export async function uploadFile(bucket, projectId, file) {
-  validateFile(bucket, file);
-  const path = `${projectId}/${crypto.randomUUID()}.${EXT[file.type]}`;
-  const { error } = await db().storage.from(bucket).upload(path, file, { contentType: file.type, upsert: false });
+  checkFiles(bucket, [file]);
+  const mime = mimeOf(file);
+  const path = `${projectId}/${crypto.randomUUID()}.${EXT[mime]}`;
+  const { error } = await db().storage.from(bucket).upload(path, file, { contentType: mime, upsert: false });
   if (error) throw normalizeError(error);
   return path;
 }

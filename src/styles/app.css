@@ -114,3 +114,14 @@ input[type=file] { padding: 10px; } .amount { font-size: 22px; font-weight: 700;
 .rc { margin: 8px 0; }
 .spacer { height: 12px; }
 :focus-visible { outline: 2px solid var(--gt); outline-offset: 2px; }
+.gal { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.gal.one { grid-template-columns: 1fr; }
+.gtile { position: relative; aspect-ratio: 1; border: 0; padding: 0; border-radius: 10px; overflow: hidden; background: var(--track); }
+.gal.one .gtile { aspect-ratio: 16 / 10; }
+.gtile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gtile.vid { background: #111; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.play { font-size: 28px; } .gtile small { font-size: 10px; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfiles { margin: 6px 0; }
+.gfile { display: flex; align-items: center; gap: 10px; width: 100%; text-align: start; border: 0; background: var(--bg); border-radius: 10px; padding: 10px; margin-bottom: 6px; min-height: 48px; color: inherit; }
+.fi { font-size: 22px; } .vname { overflow-wrap: anywhere; }
+.vmedia { width: 100%; max-height: 60vh; border-radius: 12px; background: #000; display: block; margin: 8px 0; }

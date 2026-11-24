@@ -42,6 +42,14 @@ export function makeState({ as = 'admin', lang = 'ar', leaky = false, route = {}
     issues: as === 'user' || hide ? [] : [{ id: 'is1', project_id: 'p1', stage_id: 's2', title: 'Crack', description: 'look', status: 'open', photo_path: null, created_by: 'u1', created_at: '2026-11-02T10:00:00Z' }],
     messages: as === 'user' || hide ? [] : [{ id: 'm1', issue_id: 'is1', project_id: 'p1', body: 'checked', photo_path: null, created_by: 'u2', created_at: '2026-11-02T11:00:00Z' }],
   };
+  const att = (id, kind, owner, bucket, path, name, mime, size) => ({ id, project_id: 'p1', owner_kind: kind, owner_id: owner, bucket, path, name, mime, size, created_by: 'u1', created_at: '2026-11-02T10:00:00Z' });
+  const hasVisits = !(as === 'user' || hide);
+  data.attachments = [
+    att('a1', 'update', 'up1', 'updates', 'p1/a.jpg', 'slab.jpg', 'image/jpeg', 2000000),
+    att('a2', 'update', 'up1', 'updates', 'p1/b.mp4', 'pour.mp4', 'video/mp4', 30000000),
+    att('a3', 'update', 'up1', 'updates', 'p1/c.pdf', 'plan.pdf', 'application/pdf', 800000),
+    ...(hasVisits ? [att('a4', 'issue', 'is1', 'visits', 'p1/d.jpg', 'crack.jpg', 'image/jpeg', 900000), att('a5', 'message', 'm1', 'visits', 'p1/e.mp4', 'fix.mp4', 'video/mp4', 12000000)] : []),
+  ];
   const uid = USERS[as];
   return {
     ready: true, configured: true, session: { access_token: 'x' }, user: { id: uid }, profile: { name: 'Me', username: 'me', phone: null, notify: { upd: true } }, recovery: false, lang, theme: 'auto',

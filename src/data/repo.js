@@ -15,7 +15,7 @@ export async function loadMembers(pid) {
 export async function loadProjectData(pid, caps) {
   const empty = Promise.resolve({ data: [], error: null });
   const q = (table, order, asc = true) => db().from(table).select('*').eq('project_id', pid).order(order, { ascending: asc });
-  const [stages, items, contractors, updates, payments, issues, messages] = await Promise.all([
+  const [stages, items, contractors, updates, payments, issues, messages, attachments] = await Promise.all([
     q('v_stages', 'position'),
     q('v_items', 'id'),
     q('v_contractors', 'name'),
@@ -23,6 +23,7 @@ export async function loadProjectData(pid, caps) {
     caps.costs ? q('payments', 'paid_on', false) : empty,
     caps.visits ? q('issues', 'created_at', false) : empty,
     caps.visits ? q('issue_messages', 'created_at') : empty,
+    q('attachments', 'created_at'),
   ]);
   return {
     stages: unwrap(stages),
@@ -32,6 +33,7 @@ export async function loadProjectData(pid, caps) {
     payments: unwrap(payments),
     issues: unwrap(issues),
     messages: unwrap(messages),
+    attachments: unwrap(attachments),
   };
 }
 
@@ -52,8 +54,18 @@ export const createItem = async (pid, stageId, name) =>
 
 export const markPaid = async (id, date) => unwrap(await db().from('payments').update({ status: 'paid', paid_on: date }).eq('id', id));
 export const setIssueStatus = async (id, status) => unwrap(await db().from('issues').update({ status }).eq('id', id));
-export const sendMessage = async (pid, issueId, body, photoPath) =>
-  unwrap(await db().from('issue_messages').insert({ project_id: pid, issue_id: issueId, body, photo_path: photoPath ?? null }));
+
+// إدراج صف جديد وإرجاع رقمه (لنربط به المرفقات)
+export const insertReturning = async (table, pid, fields) =>
+  unwrap(await db().from(table).insert({ ...fields, project_id: pid }).select('id').single());
+
+export const sendMessage = async (pid, issueId, body) =>
+  unwrap(await db().from('issue_messages').insert({ project_id: pid, issue_id: issueId, body }).select('id').single());
+
+// ---- المرفقات --------------------------------------------------------------
+export const addAttachments = async (pid, rows) =>
+  unwrap(await db().from('attachments').insert(rows.map((r) => ({ ...r, project_id: pid }))));
+export const removeAttachments = async (ids) => unwrap(await db().from('attachments').delete().in('id', ids));
 
 export const saveProject = async (id, patch) => unwrap(await db().from('projects').update(patch).eq('id', id));
 export const deleteProject = async (id) => unwrap(await db().from('projects').delete().eq('id', id));

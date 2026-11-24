@@ -13,6 +13,7 @@ import { inviteForm, memberForm, rolesSheet } from '../src/ui/views/team.js';
 import { projectForm, switchSheet } from '../src/ui/views/projects.js';
 import { profileForm } from '../src/ui/views/settings.js';
 import { makeContext } from '../src/state/store.js';
+import { viewerSheet } from '../src/ui/components.js';
 
 const ROLES = ['admin', 'supervisor', 'user', 'contractor'];
 const ROUTES = [
@@ -76,7 +77,7 @@ test('النماذج والنوافذ تُرسم بدون أخطاء', () => {
   setLang('ar');
   const c = makeContext(makeState());
   const outs = [paymentForm(c, null, 's2'), paymentForm(c, c.d.payments[0]), stageForm(null), stageForm(c.d.stages[1]), itemForm(null, 's2'), itemForm(c.d.items[0]),
-    contractorForm(null), contractorForm(c.d.contractors[0]), updateForm(null), updateForm(c.d.updates[0]), issueForm(c), inviteForm(c), memberForm(c, c.d.members[1]),
+    contractorForm(null), contractorForm(c.d.contractors[0]), updateForm(c, null), updateForm(c, c.d.updates[0]), issueForm(c), inviteForm(c), memberForm(c, c.d.members[1]),
     rolesSheet(), projectForm(null), projectForm(c.project), switchSheet(c), profileForm({ name: 'A', phone: '050' })].map(String);
   outs.forEach((o, i) => assert.ok(o.length > 20 && !/undefined|NaN|\[object/.test(o), `form #${i}`));
   assert.ok(String(inviteForm(c)).includes('value="user"'), 'default invite role is the lowest');
@@ -141,4 +142,52 @@ test('الترجمات: تطابق المفاتيح وكل مفتاح مستخد
     else if (!dictionaries.ar[k]) missing.push(k);
   }
   assert.deepEqual(missing, []);
+});
+
+test('المرفقات: صور وفيديو وملفات تظهر في التحديثات وفي الزيارات والردود', () => {
+  const upd = render(makeState({ route: { tab: 'site' } }));
+  assert.equal((upd.match(/data-act="att-open"/g) || []).length, 3, 'image + video + pdf');
+  assert.ok(upd.includes('data-signed="updates|p1/a.jpg"') && upd.includes('class="gtile vid"') && upd.includes('plan.pdf') && upd.includes('📄'));
+  const vis = render(makeState({ route: { tab: 'site', site: 'visits' } }));
+  assert.ok(vis.includes('data-signed="visits|p1/d.jpg"'), 'issue thumbnail');
+  const issue = render(makeState({ route: { tab: 'site', sub: 'issue', id: 'is1' } }));
+  assert.ok(issue.includes('data-signed="visits|p1/d.jpg"') && issue.includes('fix.mp4'), 'issue + reply media');
+  assert.ok(issue.includes('type="file" multiple'), 'reply form accepts many files');
+});
+
+test('المرفقات: من لا يملك صلاحية الزيارات يرى مرفقات التحديثات فقط', () => {
+  const s = makeState({ as: 'user', route: { tab: 'site' } });
+  assert.equal((render(s).match(/data-act="att-open"/g) || []).length, 3);
+  const vis = render({ ...s, route: { ...s.route, site: 'visits' } });
+  assert.ok(vis.includes('🔒') && !vis.includes('d.jpg') && !vis.includes('fix.mp4'));
+});
+
+test('نافذة الاستعراض تعرض كل نوع بالعنصر المناسب', () => {
+  setLang('en');
+  const base = { name: 'f', size: 1000, bucket: 'updates' };
+  const img = String(viewerSheet({ ...base, mime: 'image/png', path: 'p1/x.png' }, 'https://s/x', 0, 3));
+  const vid = String(viewerSheet({ ...base, mime: 'video/mp4' }, 'https://s/x', 1, 3));
+  const pdf = String(viewerSheet({ ...base, mime: 'application/pdf' }, 'https://s/x', 2, 3));
+  const doc = String(viewerSheet({ ...base, name: 'a.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }, 'https://s/x', 0, 1));
+  assert.ok(img.includes('<img class="vmedia"') && vid.includes('<video class="vmedia"') && vid.includes('controls playsinline') && pdf.includes('<iframe'));
+  assert.ok(doc.includes('class="note"') && !doc.includes('att-nav'), 'single file has no navigation');
+  assert.ok(img.includes('att-nav') && img.includes('rel="noopener noreferrer"') && img.includes('1 / 3'));
+});
+
+test('نماذج الرفع تقبل عدة ملفات (صور وفيديو وPDF) وتتيح إزالة القديم', () => {
+  setLang('ar');
+  const c = makeContext(makeState());
+  for (const f of [updateForm(c, null), updateForm(c, c.d.updates[0]), issueForm(c)].map(String)) {
+    assert.match(f, /type="file" multiple accept="[^"]*video\/mp4[^"]*application\/pdf/);
+  }
+  const edit = String(updateForm(c, c.d.updates[0]));
+  assert.equal((edit.match(/name="remove"/g) || []).length, 3, 'existing files can be removed');
+  assert.ok(!String(updateForm(c, null)).includes('name="remove"'));
+});
+
+test('أسماء الملفات تُهرَّب', () => {
+  const s = makeState({ route: { tab: 'site' } });
+  s.data.attachments[2].name = '<script>alert(1)</script>.pdf';
+  const out = render(s);
+  assert.ok(!out.includes('<script>alert') && out.includes('&lt;script&gt;'));
 });

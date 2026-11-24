@@ -35,3 +35,19 @@ test('الأعضاء لا يعدَّلون إلا عبر دوال الخادم',
 test('سياسات التخزين تغطي المجلدات الأربعة', () => {
   for (const b of ['receipts', 'contracts', 'updates', 'visits']) assert.match(sql, new RegExp(`\\('${b}','`));
 });
+
+const att = fs.readFileSync('supabase/migrations/002_attachments.sql', 'utf8');
+test('مرفقات 002: RLS وحدود الصلاحيات وسلامة الربط والترحيل', () => {
+  assert.match(att, /alter table public\.attachments enable row level security/);
+  assert.match(att, /create policy att_read[\s\S]*'member' else 'visits'/);
+  assert.match(att, /create policy att_ins[\s\S]*created_by = auth\.uid\(\)/);
+  assert.match(att, /create trigger chk_attachments before insert/);
+  assert.match(att, /new\.path not like new\.project_id::text/);
+  for (const t of ['project_updates', 'issues', 'issue_messages']) assert.match(att, new RegExp(`after delete on public\\.${t}`));
+  assert.match(att, /drop constraint if exists issue_messages_check/);
+  assert.match(att, /file_size_limit = 52428800/);
+  assert.equal((att.match(/\$\$/g) || []).length % 2, 0);
+  assert.doesNotMatch(att, /grant[^;]*anon/);
+  const noStrings = att.replace(/'(?:[^']|'')*'/g, "''").replace(/--.*$/gm, '');
+  assert.equal((noStrings.match(/\(/g) || []).length, (noStrings.match(/\)/g) || []).length);
+});

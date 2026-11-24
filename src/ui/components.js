@@ -1,6 +1,7 @@
 import { html } from './dom.js';
 import { t } from '../i18n/index.js';
 import { money } from '../domain/format.js';
+import { kindOf, formatSize } from '../domain/files.js';
 
 export const pbar = (p) =>
   html`<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p)}"><i style="width:${Math.max(0, Math.min(100, p))}%"></i></div>`;
@@ -54,4 +55,42 @@ export function rowsChart(entries) {
   if (!entries.length) return html`<div class="mut">${t('no_data')}</div>`;
   const max = Math.max(1, ...entries.map((e) => e[1]));
   return entries.map((e) => html`<div class="rc"><div class="row"><span>${e[0]}</span><b>${money(e[1])}</b></div>${pbar((e[1] / max) * 100)}</div>`);
+}
+
+// ---- المرفقات: معرض صور وفيديو + قائمة ملفات + نافذة استعراض --------------------------
+export const ACCEPT = 'image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm,application/pdf,.doc,.docx,.xls,.xlsx,.txt';
+
+export const fileInput = (label = t('att_label')) =>
+  fld(label, html`<input name="files" type="file" multiple accept="${ACCEPT}">`, t('att_hint'));
+
+// قائمة المرفقات الحالية في نموذج التعديل (علامة = إزالة عند الحفظ)
+export const existingFiles = (list) =>
+  list.length
+    ? html`<div class="fld"><span>${t('att_current')}</span>${list.map((a) => html`<label class="chk"><input type="checkbox" name="remove" value="${a.id}"><span>${a.name} · ${t('att_remove')}</span></label>`)}</div>`
+    : '';
+
+export function gallery(list) {
+  if (!list?.length) return '';
+  const media = list.filter((a) => kindOf(a.mime) !== 'file');
+  const files = list.filter((a) => kindOf(a.mime) === 'file');
+  return html`${media.length
+    ? html`<div class="gal ${media.length === 1 ? 'one' : ''}">${media.map((a) =>
+        kindOf(a.mime) === 'image'
+          ? html`<button class="gtile" data-act="att-open" data-id="${a.id}" aria-label="${a.name}"><img data-signed="${a.bucket}|${a.path}" alt="" loading="lazy"></button>`
+          : html`<button class="gtile vid" data-act="att-open" data-id="${a.id}" aria-label="${a.name}"><span class="play" aria-hidden="true">▶</span><small>${a.name}</small></button>`)}</div>`
+    : ''}${files.length
+    ? html`<div class="gfiles">${files.map((a) => html`<button class="gfile" data-act="att-open" data-id="${a.id}"><span class="fi" aria-hidden="true">${a.mime === 'application/pdf' ? '📄' : '📎'}</span><span class="grow">${a.name}<small class="mut block">${formatSize(a.size)}</small></span></button>`)}</div>`
+    : ''}`;
+}
+
+export function viewerSheet(a, url, i, n) {
+  const kind = kindOf(a.mime);
+  return html`<div class="row"><b class="vname">${a.name}</b><span class="mut">${i + 1} / ${n}</span></div>
+    ${kind === 'image' ? html`<img class="vmedia" src="${url}" alt="${a.name}">`
+      : kind === 'video' ? html`<video class="vmedia" src="${url}" controls playsinline preload="metadata"></video>`
+      : a.mime === 'application/pdf' ? html`<iframe class="pdf" src="${url}" title="${a.name}"></iframe>`
+      : html`<div class="note">${a.name}${a.size ? ` · ${formatSize(a.size)}` : ''}</div>`}
+    ${n > 1 ? html`<div class="two"><button class="btn o" data-act="att-nav" data-dir="-1">${t('att_prev')}</button><button class="btn o" data-act="att-nav" data-dir="1">${t('att_next')}</button></div>` : ''}
+    <a class="btn o" href="${url}" target="_blank" rel="noopener noreferrer">${t('att_download')}</a>
+    <button class="btn" data-act="sheet-close">${t('close')}</button>`;
 }
